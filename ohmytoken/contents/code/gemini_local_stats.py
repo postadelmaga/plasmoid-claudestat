@@ -29,9 +29,9 @@ try:
     with open(accounts_file) as f:
         acc = json.load(f)
     if isinstance(acc, dict):
-        account = acc.get("email", "")
+        account = acc.get("email", acc.get("active", ""))
     elif isinstance(acc, list) and acc:
-        account = acc[0] if isinstance(acc[0], str) else acc[0].get("email", "")
+        account = acc[0] if isinstance(acc[0], str) else acc[0].get("email", acc[0].get("active", ""))
 except:
     pass
 
@@ -128,20 +128,39 @@ def add_tokens(ts_ms, tokens):
 
 # --- Parse all chat sessions ---
 try:
-    for chat_file in glob.glob(os.path.join(tmp_dir, "*/chats/session-*.json")):
+    for chat_file in glob.glob(os.path.join(tmp_dir, "*/chats/session-*.json*")):
         try:
             with open(chat_file) as f:
-                session = json.load(f)
+                if chat_file.endswith(".jsonl"):
+                    lines = f.readlines()
+                    if not lines: continue
+                    try:
+                        header = json.loads(lines[0])
+                    except:
+                        header = {}
+                    messages = []
+                    for line in lines[1:]:
+                        try:
+                            messages.append(json.loads(line))
+                        except:
+                            continue
+                    
+                    sess_start = header.get("startTime", "")
+                    sess_updated = header.get("lastUpdated", "")
+                    sess_id = header.get("sessionId", "")
+                else:
+                    session = json.load(f)
+                    messages = session.get("messages", [])
+                    sess_start = session.get("startTime", "")
+                    sess_updated = session.get("lastUpdated", "")
+                    sess_id = session.get("sessionId", "")
 
-            messages = session.get("messages", [])
             if not messages:
                 continue
 
             session_count += 1
             sess_tokens = 0
             sess_model = ""
-            sess_start = session.get("startTime", "")
-            sess_updated = session.get("lastUpdated", "")
             sess_project = ""
 
             # Extract project name from path
@@ -194,7 +213,7 @@ try:
                 updated_ts = _parse_iso_ts(sess_updated)
                 duration_min = (updated_ts - start_ts) / 60000 if start_ts and updated_ts else 0
                 recent_sessions.append({
-                    "id": session.get("sessionId", "")[:8],
+                    "id": sess_id[:8],
                     "tokens": sess_tokens,
                     "model": sess_model,
                     "timestamp": sess_updated or sess_start,
